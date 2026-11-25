@@ -1,0 +1,157 @@
+# ============================================================
+# 质量规则配置：规则 = 类型 + 字段 + 阈值，全部配置化
+# type 可选：
+#   not_null    非空率          params: min_pass_rate
+#   unique      主键唯一        params: -
+#   range       数值区间        params: min / max / allow_null
+#   enum        枚举值合法      params: allowed[] / allow_null
+#   pattern     格式匹配        params: regex
+#   schema      字段漂移        params: expected_fields[]
+#   freshness   数据时效        params: max_lag_hours
+#   volatility  环比波动        params: agg(mean/sum) / metric(row_count) / max_change_pct
+#   row_count   行数水位        params: min_rows / max_rows
+# level: fail（红，触发告警） / warn（黄，只上板不打扰）
+# ============================================================
+rules:
+  # ---------- github_repo ----------
+  - id: repo.stars.not_null
+    type: not_null
+    source: github_repo
+    field: stars
+    level: fail
+    params: { min_pass_rate: 0.99 }
+    desc: 仓库 star 数不能为空
+
+  - id: repo.name.unique
+    type: unique
+    source: github_repo
+    field: repo
+    level: fail
+    desc: 同一批次仓库名不能重复
+
+  - id: repo.stars.range
+    type: range
+    source: github_repo
+    field: stars
+    level: warn
+    params: { min: 0, max: 5000000 }
+    desc: star 数需在合理区间
+
+  - id: repo.pushed_at.fresh
+    type: freshness
+    source: github_repo
+    field: pushed_at
+    level: warn
+    params: { max_lag_hours: 720 }
+    desc: 最近提交时间不应超过 30 天
+
+  - id: repo.schema
+    type: schema
+    source: github_repo
+    level: fail
+    params:
+      expected_fields: [repo, stars, forks, language, pushed_at]
+    desc: 上游返回字段不能缺失（防上游改接口）
+
+  - id: repo.stars.volatility
+    type: volatility
+    source: github_repo
+    field: stars
+    level: warn
+    params: { agg: mean, max_change_pct: 30 }
+    desc: 平均 star 数环比波动不应超过 30%（防上游换排序/换分页）
+
+  # ---------- product_catalog ----------
+  - id: product.id.unique
+    type: unique
+    source: product_catalog
+    field: product_id
+    level: fail
+    desc: 商品 ID 必须唯一
+
+  - id: product.price.range
+    type: range
+    source: product_catalog
+    field: price
+    level: fail
+    params: { min: 0.01, max: 100000 }
+    desc: 商品价格必须为正数且在合理区间
+
+  - id: product.stock.range
+    type: range
+    source: product_catalog
+    field: stock
+    level: warn
+    params: { min: 0, max: 100000 }
+    desc: 库存不应为负或异常大
+
+  - id: product.category.pattern
+    type: pattern
+    source: product_catalog
+    field: category
+    level: warn
+    params: { regex: "[a-z][a-z-]*" }
+    desc: 类目名只能是小写字母与短横线
+
+  - id: product.schema
+    type: schema
+    source: product_catalog
+    level: fail
+    params:
+      expected_fields: [product_id, title, price, stock, rating, category]
+    desc: 商品字段不能缺失
+
+  # ---------- demo_order ----------
+  - id: order.id.unique
+    type: unique
+    source: demo_order
+    field: order_id
+    level: fail
+    desc: 订单号必须唯一（防重复落库）
+
+  - id: order.amount.not_null
+    type: not_null
+    source: demo_order
+    field: amount
+    level: fail
+    params: { min_pass_rate: 1.0 }
+    desc: 订单金额不能为空
+
+  - id: order.amount.range
+    type: range
+    source: demo_order
+    field: amount
+    level: fail
+    params: { min: 0.01, max: 100000 }
+    desc: 订单金额需在 0.01 ~ 10 万之间
+
+  - id: order.status.enum
+    type: enum
+    source: demo_order
+    field: status
+    level: fail
+    params: { allowed: [paid, pending, refunded], allow_null: false }
+    desc: 订单状态只能是白名单内取值
+
+  - id: order.created_at.fresh
+    type: freshness
+    source: demo_order
+    field: created_at
+    level: fail
+    params: { max_lag_hours: 24 }
+    desc: 最新订单不应滞后超过 24 小时
+
+  - id: order.rows.watermark
+    type: row_count
+    source: demo_order
+    level: fail
+    params: { min_rows: 40 }
+    desc: 单批次订单数不应低于水位线（防采集截断）
+
+  - id: order.schema
+    type: schema
+    source: demo_order
+    level: fail
+    params:
+      expected_fields: [order_id, amount, status, channel, created_at]
+    desc: 订单表字段不能缺失

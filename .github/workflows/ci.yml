@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: 单元测试 + 看板冒烟测试
+        run: pytest
+
+      - name: 离线端到端（不依赖外网，验证采集->落库->规则->看板数据链路）
+        run: |
+          python -m dq.cli init
+          python -m dq.cli seed --days 3
+          python -m dq.cli rules
+
+      - name: 检查配置可解析
+        run: python -c "from dq.config import load_settings; s = load_settings(); print(f'{len(s.sources)} 个源 / {len(s.rules)} 条规则')"

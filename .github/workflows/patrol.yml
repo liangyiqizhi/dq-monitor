@@ -1,0 +1,46 @@
+name: patrol
+
+# 每天 UTC 01:00（北京时间 09:00）自动巡检一次
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patrol:
+    runs-on: ubuntu-latest
+    env:
+      DQ_DB: ./data/dq.db
+      DQ_ALERT_WEBHOOK: ${{ secrets.DQ_ALERT_WEBHOOK }}
+      DQ_ALERT_KIND: wecom
+      # 定时任务每天只跑一次，抑制窗口放大到 12 小时，避免重复打扰
+      DQ_ALERT_DEDUP_MINUTES: "720"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 执行巡检
+        # 有质量失败时命令返回 1，这里不让作业直接红掉，先保证数据落盘
+        run: python -m dq.cli run || echo "存在质量失败，结果已记录到看板"
+
+      - name: 整理数据库文件
+        run: python -c "import sqlite3; c = sqlite3.connect('data/dq.db'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+
+      - name: 提交数据库，让云端看板读到最新数据
+        run: |
+          git config user.name "dq-bot"
+          git config user.email "dq-bot@users.noreply.github.com"
+          git add -f data/dq.db
+          git commit -m "chore: 巡检数据 $(date -u +%Y-%m-%d)" || echo "数据无变化，跳过提交"
+          git push

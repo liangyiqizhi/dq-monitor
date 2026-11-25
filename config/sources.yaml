@@ -1,0 +1,48 @@
+# ============================================================
+# 数据源配置：新增 / 更换数据源只改这个文件，不需要动代码
+# 流程：采集 -> 落库(幂等) -> 跑规则 -> 看板 / 告警
+# ============================================================
+sources:
+  - name: github_repo
+    desc: GitHub 热门仓库（真实 HTTP 源，无需密钥）
+    type: http_json
+    url: "https://api.github.com/search/repositories?q=stars:%3E10000&sort=stars&order=desc&per_page=50"
+    timeout: 15
+    retries: 2
+    headers:
+      Accept: application/vnd.github+json
+      User-Agent: dq-monitor
+    list_path: items          # 列表在返回体中的路径，支持 a.b.c；空字符串表示根节点就是列表
+    key_field: repo           # 业务主键（映射后的字段名），用于幂等 upsert
+    fields:                   # 目标字段: 源字段路径
+      repo: full_name
+      stars: stargazers_count
+      forks: forks_count
+      language: language
+      pushed_at: pushed_at
+
+  - name: product_catalog
+    desc: 商品目录（真实 HTTP 源，字段全，适合演示区间/枚举/格式规则）
+    type: http_json
+    url: "https://dummyjson.com/products?limit=30&select=id,title,price,stock,rating,category"
+    timeout: 15
+    retries: 2
+    headers:
+      User-Agent: dq-monitor
+    list_path: products
+    key_field: product_id
+    fields:
+      product_id: id
+      title: title
+      price: price
+      stock: stock
+      rating: rating
+      category: category
+
+  - name: demo_order
+    desc: 离线演示源（订单流水，无网络也能跑通全链路，CI 用它）
+    type: demo
+    key_field: order_id
+    options:
+      rows: 80
+      seed: 20260101

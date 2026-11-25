@@ -1,0 +1,15 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---- 运行时产物 ----
+data/*.db
+data/*.db-wal
+data/*.db-shm
+.env
+
+# 说明：默认不跟踪数据库。若要让云端看板读到数据，用 git add -f data/dq.db
